@@ -1,104 +1,88 @@
 # SimRacing Launcher
 
-Inicializador Windows para preparar o ambiente de sim racing:
+Launcher Windows em .NET para alternar rapidamente entre modos de tela e iniciar o ambiente de sim racing.
 
-- ajusta a resolucao para `2560x1440`;
-- mantem/forca a frequencia configurada em `Simracing.ps1`;
-- fecha apps e servicos de fundo definidos no script;
+Esta branch contem a versao com interface grafica. A branch `simracing` preserva a versao anterior baseada em PowerShell/ps2exe.
+
+## Botoes
+
+### Simracing
+
+Executa o fluxo completo:
+
+- altera a tela para `2560x1440` usando a maior frequencia disponivel;
+- fecha apps e servicos de fundo definidos no codigo;
 - inicia SteamVR, CrewChief, Discord, Trading Paints, OBS e iRacing;
-- aplica modo borderless na janela do iRacing quando ela aparecer;
-- mantem a janela do launcher aberta e restaura a resolucao/frequencia do desktop ao encerrar.
+- aguarda a janela do iRacing e aplica modo borderless.
 
-## Executar
+### Streaming
 
-Use o arquivo:
+Executa apenas a parte de resolucao:
+
+- altera a tela para `2560x1440` usando a maior frequencia disponivel;
+- nao fecha processos;
+- nao para servicos;
+- nao abre programas.
+
+### Desktop
+
+Restaura a tela para o modo de desktop:
+
+- `3440x1440` usando a maior frequencia disponivel.
+
+## Executavel publicado
+
+O executavel pronto para copiar fica em:
 
 ```text
-SimRacingLauncher.exe
+publish\SimRacingLauncher\SimRacingLauncher.exe
 ```
 
-O executavel foi gerado com manifesto `requireAdmin`, entao o Windows deve abrir o prompt do UAC automaticamente ao iniciar.
+Ele e publicado como single-file self-contained para `win-x64`, entao pode ser copiado sozinho para a maquina destino. Nao e necessario instalar .NET na maquina destino.
 
-## Posso copiar apenas o executavel para outra maquina?
+O app tem manifesto `requireAdministrator`, entao o Windows deve pedir permissao de administrador pelo UAC ao abrir.
 
-Sim. Para executar na maquina destino, em geral basta copiar apenas:
+## Gerar o executavel .NET
 
-```text
-SimRacingLauncher.exe
-```
-
-O icone e o conteudo do `Simracing.ps1` ficam embutidos no executavel. A maquina destino nao precisa ter `ps2exe` instalado e tambem nao precisa receber a pasta `tools`.
-
-Mas a maquina destino ainda precisa ter os programas nos caminhos configurados dentro do script, por exemplo OBS, CrewChief, Trading Paints e iRacing. Se os caminhos forem diferentes, ajuste `Simracing.ps1` neste projeto e gere o executavel novamente.
-
-## Gerar o executavel
-
-Para regenerar o launcher a partir do script:
+Para compilar e publicar:
 
 ```powershell
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Build-SimRacingLauncher.ps1
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Build-DotNetLauncher.ps1
 ```
 
-Esse comando gera/atualiza:
+Esse comando atualiza:
 
 ```text
-SimRacingLauncher.exe
+publish\SimRacingLauncher\SimRacingLauncher.exe
 ```
 
-O build usa o `ps2exe` versionado no projeto em:
+## Configuracoes principais
+
+As configuracoes ficam em:
 
 ```text
-tools\ps2exe\1.0.18
+src\SimRacingLauncher\LauncherActions.cs
 ```
 
-Assim, nao e necessario instalar `ps2exe` globalmente para compilar em outra maquina que tenha o repositório completo.
+Valores atuais:
 
-## Icone
-
-O icone final fica em:
-
-```text
-assets\SimRacingLauncher.ico
+```csharp
+private static readonly DisplayRequest SimRacingDisplay = DisplayRequest.Max(2560, 1440);
+private static readonly DisplayRequest DesktopDisplay = DisplayRequest.Max(3440, 1440);
 ```
 
-Para regenerar somente o icone:
+`DisplayRequest.Max` enumera os modos anunciados pelo monitor/driver para aquela resolucao e tenta usar a maior frequencia disponivel. Se o Windows recusar um modo, o launcher tenta os proximos modos. Se todos forem recusados, ele cai em uma alteracao direta de resolucao como fallback.
 
-```powershell
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\tools\New-SimRacingIcon.ps1
-```
+## Observacao sobre taxa dinamica
 
-Ao rodar `Build-SimRacingLauncher.ps1`, esse icone e embutido no executavel.
+O launcher nao altera diretamente a opcao de taxa de atualizacao dinamica do Windows. Essa configuracao depende do Windows/driver/monitor e nao tem uma API simples e confiavel como a troca de resolucao/frequencia.
 
-## Resolucao e frequencia
-
-As configuracoes ficam no inicio de `Simracing.ps1`:
-
-```powershell
-$TargetWidth = 2560
-$TargetHeight = 1440
-$TargetRefreshRate = "Max"
-$RestoreDisplayOnLauncherExit = $true
-$RestoreWidth = 3440
-$RestoreHeight = 1440
-$RestoreRefreshRate = "Max"
-```
-
-Quando `$TargetRefreshRate` ou `$RestoreRefreshRate` estao como `"Max"`, o launcher enumera os modos anunciados pelo monitor/driver para aquela resolucao e escolhe a maior frequencia disponivel.
-
-Se o Windows recusar o modo de maior frequencia, o launcher tenta os proximos modos enumerados. Se todos forem recusados, ele volta para uma alteracao direta de resolucao como fallback.
-
-Tambem e possivel informar uma frequencia especifica, por exemplo `174.96`. Nesse caso, o valor e arredondado para a API do Windows, entao `174.96` e enviado como `175`.
-
-Se a frequencia estiver `$null`, o launcher altera apenas a resolucao e deixa o Windows/driver escolher a frequencia.
-
-Quando `$RestoreDisplayOnLauncherExit` esta `$true`, o launcher fica aberto depois de preparar o ambiente. Deixe essa janela aberta enquanto estiver usando qualquer simulador. Ao pressionar Enter na janela do launcher, ele restaura `3440x1440` usando a maior frequencia disponivel e encerra. Se a janela for fechada diretamente, o launcher tambem tenta restaurar a tela usando o handler nativo de fechamento do console, mas o fechamento controlado com Enter e o caminho mais confiavel.
-
-Observacao: o launcher nao altera diretamente a opcao de taxa de atualizacao dinamica do Windows. Essa configuracao depende do Windows/driver/monitor e nao tem uma API simples e confiavel como a troca de resolucao/frequencia. A restauracao feita aqui e explicita: `3440x1440` usando o modo de maior frequencia encontrado pelo driver para essa resolucao.
+O objetivo do app e aplicar explicitamente a resolucao desejada e escolher o melhor refresh rate anunciado pelo driver para essa resolucao.
 
 ## Arquivos principais
 
-- `Simracing.ps1`: fonte principal do launcher.
-- `SimRacingLauncher.exe`: executavel pronto para uso.
-- `Build-SimRacingLauncher.ps1`: script de build.
-- `assets\SimRacingLauncher.ico`: icone do executavel.
-- `tools\ps2exe\1.0.18`: dependencia local usada apenas para gerar o `.exe`.
+- `src\SimRacingLauncher`: projeto WinForms .NET.
+- `Build-DotNetLauncher.ps1`: publica o executavel self-contained.
+- `publish\SimRacingLauncher\SimRacingLauncher.exe`: executavel pronto para uso.
+- `assets\SimRacingLauncher.ico`: icone do app.
+- `Simracing.ps1`: versao PowerShell antiga mantida como referencia nesta branch.
