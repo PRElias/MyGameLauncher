@@ -6,11 +6,19 @@ $CrewChiefCandidates = "C:\Program Files (x86)\Britton IT Ltd\CrewChiefV4\CrewCh
 $TradingPaints = "C:\Program Files (x86)\Rhinode LLC\Trading Paints\Trading Paints.exe"
 $Discord = "$env:LocalAppData\Discord\Update.exe"
 $iRacing = "C:\Program Files (x86)\iRacing\ui\iRacingUI.exe"
-$ForceBorderless = Join-Path $PSScriptRoot "ForceBorderless.ps1"
+$TargetWidth = 2560
+$TargetHeight = 1440
+$TargetRefreshRate = 174.96 # $null # Use $null para manter a frequencia atual, ou defina 174 para forcar 174 Hz.
 
 $failures = [System.Collections.Generic.List[string]]::new()
 
 function Set-ScreenResolution {
+    param(
+        [int]$Width,
+        [int]$Height,
+        [Nullable[double]]$RefreshRate = $null
+    )
+
     if (-not ([System.Management.Automation.PSTypeName]'Display.NativeMethods').Type) {
         Add-Type @"
 using System;
@@ -28,8 +36,11 @@ namespace Display {
             public int dmBitsPerPel, dmPelsWidth, dmPelsHeight, dmDisplayFlags, dmDisplayFrequency;
         }
         [DllImport("user32.dll", CharSet = CharSet.Ansi)]
+        public static extern bool EnumDisplaySettings(string deviceName, int modeNum, ref DEVMODE devMode);
+        [DllImport("user32.dll", CharSet = CharSet.Ansi)]
         public static extern int ChangeDisplaySettings(ref DEVMODE devMode, int flags);
-        public const int DM_PELSWIDTH = 0x80000, DM_PELSHEIGHT = 0x100000;
+        public const int ENUM_CURRENT_SETTINGS = -1;
+        public const int DM_BITSPERPEL = 0x40000, DM_PELSWIDTH = 0x80000, DM_PELSHEIGHT = 0x100000, DM_DISPLAYFREQUENCY = 0x400000;
         public const int DISP_CHANGE_SUCCESSFUL = 0;
     }
 }
@@ -38,9 +49,16 @@ namespace Display {
 
     $mode = New-Object Display.NativeMethods+DEVMODE
     $mode.dmSize = [System.Runtime.InteropServices.Marshal]::SizeOf($mode)
-    $mode.dmPelsWidth = 2560
-    $mode.dmPelsHeight = 1440
-    $mode.dmFields = [Display.NativeMethods]::DM_PELSWIDTH -bor [Display.NativeMethods]::DM_PELSHEIGHT
+    if (-not [Display.NativeMethods]::EnumDisplaySettings($null, [Display.NativeMethods]::ENUM_CURRENT_SETTINGS, [ref]$mode)) {
+        throw "Nao foi possivel ler o modo atual do monitor."
+    }
+
+    $mode.dmPelsWidth = $Width
+    $mode.dmPelsHeight = $Height
+    if ($RefreshRate.HasValue) {
+        $mode.dmDisplayFrequency = [int][Math]::Round($RefreshRate.Value)
+    }
+    $mode.dmFields = [Display.NativeMethods]::DM_BITSPERPEL -bor [Display.NativeMethods]::DM_PELSWIDTH -bor [Display.NativeMethods]::DM_PELSHEIGHT -bor [Display.NativeMethods]::DM_DISPLAYFREQUENCY
     return [Display.NativeMethods]::ChangeDisplaySettings([ref]$mode, 0) -eq [Display.NativeMethods]::DISP_CHANGE_SUCCESSFUL
 }
 
@@ -91,6 +109,53 @@ function Stop-BackgroundApplications {
     }
 }
 
+function Set-IRacingBorderless {
+    if (-not ([System.Management.Automation.PSTypeName]'Win32').Type) {
+        Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+public class Win32 {
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll")]
+    public static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+}
+"@
+    }
+
+    $process = Get-Process -Name "iRacingSim64DX11" -ErrorAction SilentlyContinue |
+        Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } |
+        Select-Object -First 1
+
+    if (-not $process) {
+        throw "Processo do iRacing nao encontrado ou a janela ainda nao carregou."
+    }
+
+    $hwnd = $process.MainWindowHandle
+    $GWL_STYLE = -16
+    $WS_CAPTION = 0x00C00000
+    $WS_THICKFRAME = 0x00040000
+    $SWP_FRAMECHANGED = 0x0020
+    $SWP_SHOWWINDOW = 0x0040
+
+    Add-Type -AssemblyName System.Windows.Forms
+    $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+    $width = $screen.Width
+    $height = $screen.Height
+
+    $style = [Win32]::GetWindowLong($hwnd, $GWL_STYLE)
+    $style = $style -band (-bnot ($WS_CAPTION -bor $WS_THICKFRAME))
+    [Win32]::SetWindowLong($hwnd, $GWL_STYLE, $style) | Out-Null
+    [Win32]::SetWindowPos($hwnd, [IntPtr]::Zero, 0, 0, $width, $height, ($SWP_FRAMECHANGED -bor $SWP_SHOWWINDOW)) | Out-Null
+
+    Write-Host "Sucesso! Janela do iRacing ajustada para Borderless ($width x $height)." -ForegroundColor Green
+}
+
 function Wait-ForIRacingWindow {
     param(
         [int]$TimeoutSeconds = 720
@@ -107,11 +172,7 @@ function Wait-ForIRacingWindow {
         if ($process) {
             Write-Host "Janela do iRacing detectada. Aplicando modo borderless..." -ForegroundColor Cyan
             try {
-                if (-not (Test-Path -LiteralPath $ForceBorderless)) {
-                    throw "Arquivo nao encontrado: $ForceBorderless"
-                }
-                & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $ForceBorderless
-                if ($LASTEXITCODE -ne 0) { throw "O script ForceBorderless.ps1 terminou com erro." }
+                Set-IRacingBorderless
                 return $true
             } catch {
                 $failures.Add("Modo borderless")
@@ -132,9 +193,10 @@ Stop-BackgroundApplications
 
 Write-Host "Iniciando ambiente de simulação..." -ForegroundColor Cyan
 
-Write-Host "1. Alterando resolução para 2560x1440..."
+$refreshDescription = if ($TargetRefreshRate) { "$TargetRefreshRate Hz" } else { "frequencia atual" }
+Write-Host "1. Alterando resolução para ${TargetWidth}x${TargetHeight} mantendo $refreshDescription..."
 try {
-    if (-not (Set-ScreenResolution)) { throw "O Windows recusou a alteração de resolução." }
+    if (-not (Set-ScreenResolution -Width $TargetWidth -Height $TargetHeight -RefreshRate $TargetRefreshRate)) { throw "O Windows recusou a alteração de resolução." }
     Write-Host "OK - Resolução alterada" -ForegroundColor Green
 } catch {
     $failures.Add("Alteração de resolução")
