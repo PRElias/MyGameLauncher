@@ -68,6 +68,20 @@ powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\tools\New-SimR
 
 Ao rodar `Build-SimRacingLauncher.ps1`, esse icone e embutido no executavel.
 
+## Resolucao e frequencia
+
+As configuracoes ficam no inicio de `Simracing.ps1`:
+
+```powershell
+$TargetWidth = 2560
+$TargetHeight = 1440
+$TargetRefreshRate = 174.96
+```
+
+Quando `$TargetRefreshRate` tem valor, o launcher informa essa frequencia ao Windows junto com a resolucao. O valor e arredondado para a API do Windows, entao `174.96` e enviado como `175`.
+
+Se `$TargetRefreshRate` estiver `$null`, o launcher tenta ler a frequencia atual do monitor e manter esse valor. Se essa leitura falhar em alguma maquina, ele mostra um aviso e altera apenas a resolucao, como o script original fazia.
+
 ## Arquivos principais
 
 - `Simracing.ps1`: fonte principal do launcher.

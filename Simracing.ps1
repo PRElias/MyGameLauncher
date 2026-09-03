@@ -49,16 +49,23 @@ namespace Display {
 
     $mode = New-Object Display.NativeMethods+DEVMODE
     $mode.dmSize = [System.Runtime.InteropServices.Marshal]::SizeOf($mode)
-    if (-not [Display.NativeMethods]::EnumDisplaySettings($null, [Display.NativeMethods]::ENUM_CURRENT_SETTINGS, [ref]$mode)) {
-        throw "Nao foi possivel ler o modo atual do monitor."
+    $fields = [Display.NativeMethods]::DM_PELSWIDTH -bor [Display.NativeMethods]::DM_PELSHEIGHT
+
+    if (-not $RefreshRate.HasValue) {
+        if ([Display.NativeMethods]::EnumDisplaySettings($null, [Display.NativeMethods]::ENUM_CURRENT_SETTINGS, [ref]$mode)) {
+            $fields = $fields -bor [Display.NativeMethods]::DM_DISPLAYFREQUENCY
+        } else {
+            Write-Warning "Nao foi possivel ler o modo atual do monitor. Alterando apenas a resolucao."
+        }
     }
 
     $mode.dmPelsWidth = $Width
     $mode.dmPelsHeight = $Height
     if ($RefreshRate.HasValue) {
         $mode.dmDisplayFrequency = [int][Math]::Round($RefreshRate.Value)
+        $fields = $fields -bor [Display.NativeMethods]::DM_DISPLAYFREQUENCY
     }
-    $mode.dmFields = [Display.NativeMethods]::DM_BITSPERPEL -bor [Display.NativeMethods]::DM_PELSWIDTH -bor [Display.NativeMethods]::DM_PELSHEIGHT -bor [Display.NativeMethods]::DM_DISPLAYFREQUENCY
+    $mode.dmFields = $fields
     return [Display.NativeMethods]::ChangeDisplaySettings([ref]$mode, 0) -eq [Display.NativeMethods]::DISP_CHANGE_SUCCESSFUL
 }
 
