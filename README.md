@@ -1,8 +1,8 @@
-# SimRacing Launcher
+# MyGameLauncher
 
 Launcher Windows em .NET para alternar rapidamente entre modos de tela e iniciar o ambiente de sim racing.
 
-Esta branch contem a versao com interface grafica. A branch `simracing` preserva a versao anterior baseada em PowerShell/ps2exe.
+Esta branch contem a versao atual com interface grafica. A branch `simracing` preserva a versao anterior baseada em PowerShell/ps2exe.
 
 ## Botoes
 
@@ -35,7 +35,7 @@ Restaura a tela para o modo de desktop:
 O executavel pronto para copiar fica em:
 
 ```text
-publish\SimRacingLauncher\SimRacingLauncher.exe
+publish\MyGameLauncher\MyGameLauncher.exe
 ```
 
 Ele e publicado como single-file self-contained para `win-x64`, entao pode ser copiado sozinho para a maquina destino. Nao e necessario instalar .NET na maquina destino.
@@ -47,13 +47,13 @@ O app tem manifesto `requireAdministrator`, entao o Windows deve pedir permissao
 Para compilar e publicar:
 
 ```powershell
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Build-DotNetLauncher.ps1
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Build-MyGameLauncher.ps1
 ```
 
 Esse comando atualiza:
 
 ```text
-publish\SimRacingLauncher\SimRacingLauncher.exe
+publish\MyGameLauncher\MyGameLauncher.exe
 ```
 
 ## Configuracoes principais
@@ -61,7 +61,7 @@ publish\SimRacingLauncher\SimRacingLauncher.exe
 As configuracoes ficam em:
 
 ```text
-src\SimRacingLauncher\LauncherActions.cs
+src\MyGameLauncher\LauncherActions.cs
 ```
 
 Valores atuais:
@@ -81,8 +81,7 @@ O objetivo do app e aplicar explicitamente a resolucao desejada e escolher o mel
 
 ## Arquivos principais
 
-- `src\SimRacingLauncher`: projeto WinForms .NET.
-- `Build-DotNetLauncher.ps1`: publica o executavel self-contained.
-- `publish\SimRacingLauncher\SimRacingLauncher.exe`: executavel pronto para uso.
-- `assets\SimRacingLauncher.ico`: icone do app.
-- `Simracing.ps1`: versao PowerShell antiga mantida como referencia nesta branch.
+- `src\MyGameLauncher`: projeto WinForms .NET.
+- `Build-MyGameLauncher.ps1`: publica o executavel self-contained.
+- `publish\MyGameLauncher\MyGameLauncher.exe`: executavel pronto para uso.
+- `assets\MyGameLauncher.ico`: icone do app.
