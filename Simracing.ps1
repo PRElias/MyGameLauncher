@@ -67,6 +67,8 @@ namespace Display {
         [DllImport("user32.dll", CharSet = CharSet.Ansi)]
         public static extern bool EnumDisplaySettings(string deviceName, int modeNum, ref DEVMODE devMode);
         [DllImport("user32.dll", CharSet = CharSet.Ansi)]
+        public static extern int ChangeDisplaySettings(ref DEVMODE devMode, int flags);
+        [DllImport("user32.dll", CharSet = CharSet.Ansi)]
         public static extern int ChangeDisplaySettingsEx(string deviceName, ref DEVMODE devMode, IntPtr hwnd, int flags, IntPtr lParam);
         public const int ENUM_CURRENT_SETTINGS = -1;
         public const int ENUM_REGISTRY_SETTINGS = -2;
@@ -100,47 +102,88 @@ namespace Display {
         }
     }
 
-    $bestMode = $null
+    $modes = [System.Collections.Generic.List[object]]::new()
     $modeIndex = 0
     do {
         $candidate = New-Object Display.NativeMethods+DEVMODE
         $candidate.dmSize = [System.Runtime.InteropServices.Marshal]::SizeOf($candidate)
         $foundMode = [Display.NativeMethods]::EnumDisplaySettings($deviceName, $modeIndex, [ref]$candidate)
         if ($foundMode -and $candidate.dmPelsWidth -eq $Width -and $candidate.dmPelsHeight -eq $Height) {
-            if ($useMaxRefreshRate) {
-                if ($null -eq $bestMode -or $candidate.dmDisplayFrequency -gt $bestMode.dmDisplayFrequency) {
-                    $bestMode = $candidate
-                }
-            } elseif ($null -ne $requestedRefreshRate) {
-                if ($candidate.dmDisplayFrequency -eq $requestedRefreshRate) {
-                    $bestMode = $candidate
-                    break
-                }
-                if ($null -eq $bestMode -or [Math]::Abs($candidate.dmDisplayFrequency - $requestedRefreshRate) -lt [Math]::Abs($bestMode.dmDisplayFrequency - $requestedRefreshRate)) {
-                    $bestMode = $candidate
-                }
-            }
+            $modes.Add([pscustomobject]@{
+                Mode = $candidate
+                Frequency = $candidate.dmDisplayFrequency
+                Distance = if ($null -ne $requestedRefreshRate) { [Math]::Abs($candidate.dmDisplayFrequency - $requestedRefreshRate) } else { 0 }
+                BitsPerPel = $candidate.dmBitsPerPel
+            })
         }
         $modeIndex++
     } while ($foundMode)
 
-    if ($null -eq $bestMode) {
-        $bestMode = New-Object Display.NativeMethods+DEVMODE
-        $bestMode.dmSize = [System.Runtime.InteropServices.Marshal]::SizeOf($bestMode)
-        $bestMode.dmPelsWidth = $Width
-        $bestMode.dmPelsHeight = $Height
-        $bestMode.dmFields = [Display.NativeMethods]::DM_PELSWIDTH -bor [Display.NativeMethods]::DM_PELSHEIGHT
-        if ($null -ne $requestedRefreshRate) {
-            $bestMode.dmDisplayFrequency = $requestedRefreshRate
-            $bestMode.dmFields = $bestMode.dmFields -bor [Display.NativeMethods]::DM_DISPLAYFREQUENCY
-        }
-        Write-Warning "Nao foi possivel localizar um modo enumerado para ${Width}x${Height}. Usando alteracao direta."
+    if ($useMaxRefreshRate) {
+        $modesToTry = $modes | Sort-Object Frequency, BitsPerPel -Descending
+    } elseif ($null -ne $requestedRefreshRate) {
+        $modesToTry = $modes | Sort-Object Distance, Frequency
     } else {
-        $bestMode.dmFields = [Display.NativeMethods]::DM_BITSPERPEL -bor [Display.NativeMethods]::DM_PELSWIDTH -bor [Display.NativeMethods]::DM_PELSHEIGHT -bor [Display.NativeMethods]::DM_DISPLAYFREQUENCY
-        Write-Host "Modo escolhido: $($bestMode.dmPelsWidth)x$($bestMode.dmPelsHeight) @ $($bestMode.dmDisplayFrequency) Hz" -ForegroundColor Cyan
+        $modesToTry = @()
     }
 
-    return [Display.NativeMethods]::ChangeDisplaySettingsEx($deviceName, [ref]$bestMode, [IntPtr]::Zero, 0, [IntPtr]::Zero) -eq [Display.NativeMethods]::DISP_CHANGE_SUCCESSFUL
+    foreach ($entry in $modesToTry) {
+        $modeToTry = $entry.Mode
+        $modeToTry.dmFields = [Display.NativeMethods]::DM_BITSPERPEL -bor [Display.NativeMethods]::DM_PELSWIDTH -bor [Display.NativeMethods]::DM_PELSHEIGHT -bor [Display.NativeMethods]::DM_DISPLAYFREQUENCY
+        Write-Host "Tentando modo: $($modeToTry.dmPelsWidth)x$($modeToTry.dmPelsHeight) @ $($modeToTry.dmDisplayFrequency) Hz" -ForegroundColor Cyan
+
+        $result = [Display.NativeMethods]::ChangeDisplaySettingsEx($deviceName, [ref]$modeToTry, [IntPtr]::Zero, 0, [IntPtr]::Zero)
+        if ($result -eq [Display.NativeMethods]::DISP_CHANGE_SUCCESSFUL) {
+            return $true
+        }
+
+        $fallbackResult = [Display.NativeMethods]::ChangeDisplaySettings([ref]$modeToTry, 0)
+        if ($fallbackResult -eq [Display.NativeMethods]::DISP_CHANGE_SUCCESSFUL) {
+            return $true
+        }
+
+        Write-Warning "Modo recusado: $($modeToTry.dmPelsWidth)x$($modeToTry.dmPelsHeight) @ $($modeToTry.dmDisplayFrequency) Hz (codigos $result/$fallbackResult)."
+    }
+
+    $directMode = New-Object Display.NativeMethods+DEVMODE
+    $directMode.dmSize = [System.Runtime.InteropServices.Marshal]::SizeOf($directMode)
+    $directMode.dmPelsWidth = $Width
+    $directMode.dmPelsHeight = $Height
+    $directMode.dmBitsPerPel = 32
+    $directMode.dmFields = [Display.NativeMethods]::DM_BITSPERPEL -bor [Display.NativeMethods]::DM_PELSWIDTH -bor [Display.NativeMethods]::DM_PELSHEIGHT
+    if ($null -ne $requestedRefreshRate) {
+        $directMode.dmDisplayFrequency = $requestedRefreshRate
+        $directMode.dmFields = $directMode.dmFields -bor [Display.NativeMethods]::DM_DISPLAYFREQUENCY
+    }
+
+    if ($modes.Count -eq 0) {
+        Write-Warning "Nao foi possivel localizar um modo enumerado para ${Width}x${Height}. Usando alteracao direta."
+    } else {
+        Write-Warning "Todos os modos enumerados para ${Width}x${Height} foram recusados. Usando alteracao direta."
+    }
+
+    $directResult = [Display.NativeMethods]::ChangeDisplaySettingsEx($deviceName, [ref]$directMode, [IntPtr]::Zero, 0, [IntPtr]::Zero)
+    if ($directResult -eq [Display.NativeMethods]::DISP_CHANGE_SUCCESSFUL) {
+        return $true
+    }
+
+    $globalDirectResult = [Display.NativeMethods]::ChangeDisplaySettings([ref]$directMode, 0)
+    if ($globalDirectResult -eq [Display.NativeMethods]::DISP_CHANGE_SUCCESSFUL) {
+        return $true
+    }
+
+    if ($null -ne $requestedRefreshRate) {
+        Write-Warning "Alteracao direta com frequencia foi recusada (codigos $directResult/$globalDirectResult). Tentando apenas resolucao."
+        $resolutionOnlyMode = New-Object Display.NativeMethods+DEVMODE
+        $resolutionOnlyMode.dmSize = [System.Runtime.InteropServices.Marshal]::SizeOf($resolutionOnlyMode)
+        $resolutionOnlyMode.dmPelsWidth = $Width
+        $resolutionOnlyMode.dmPelsHeight = $Height
+        $resolutionOnlyMode.dmFields = [Display.NativeMethods]::DM_PELSWIDTH -bor [Display.NativeMethods]::DM_PELSHEIGHT
+        $resolutionOnlyResult = [Display.NativeMethods]::ChangeDisplaySettings([ref]$resolutionOnlyMode, 0)
+        return $resolutionOnlyResult -eq [Display.NativeMethods]::DISP_CHANGE_SUCCESSFUL
+    }
+
+    return $false
 }
 
 function Start-RequiredProcess {

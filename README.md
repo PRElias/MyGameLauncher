@@ -85,6 +85,8 @@ $RestoreRefreshRate = "Max"
 
 Quando `$TargetRefreshRate` ou `$RestoreRefreshRate` estao como `"Max"`, o launcher enumera os modos anunciados pelo monitor/driver para aquela resolucao e escolhe a maior frequencia disponivel.
 
+Se o Windows recusar o modo de maior frequencia, o launcher tenta os proximos modos enumerados. Se todos forem recusados, ele volta para uma alteracao direta de resolucao como fallback.
+
 Tambem e possivel informar uma frequencia especifica, por exemplo `174.96`. Nesse caso, o valor e arredondado para a API do Windows, entao `174.96` e enviado como `175`.
 
 Se a frequencia estiver `$null`, o launcher altera apenas a resolucao e deixa o Windows/driver escolher a frequencia.
