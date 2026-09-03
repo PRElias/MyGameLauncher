@@ -8,20 +8,33 @@ $Discord = "$env:LocalAppData\Discord\Update.exe"
 $iRacing = "C:\Program Files (x86)\iRacing\ui\iRacingUI.exe"
 $TargetWidth = 2560
 $TargetHeight = 1440
-$TargetRefreshRate = 174.96 # $null # Use $null para manter a frequencia atual, ou defina 174 para forcar 174 Hz.
+$TargetRefreshRate = "Max" # Use "Max" para maior frequencia disponivel, $null para deixar o Windows escolher, ou 174.96 para forcar.
 $RestoreDisplayOnLauncherExit = $true
 $RestoreWidth = 3440
 $RestoreHeight = 1440
-$RestoreRefreshRate = 174.96
+$RestoreRefreshRate = "Max"
 
 $failures = [System.Collections.Generic.List[string]]::new()
 $displayRestoreAttempted = $false
+$consoleCloseHandler = $null
+
+function Format-RefreshRate {
+    param([object]$RefreshRate)
+
+    if ($null -eq $RefreshRate) {
+        return "Windows"
+    }
+    if ($RefreshRate -is [string] -and $RefreshRate.Equals("Max", [System.StringComparison]::OrdinalIgnoreCase)) {
+        return "maior frequencia disponivel"
+    }
+    return "$RefreshRate Hz"
+}
 
 function Set-ScreenResolution {
     param(
         [int]$Width,
         [int]$Height,
-        [Nullable[double]]$RefreshRate = $null
+        [object]$RefreshRate = $null
     )
 
     if (-not ([System.Management.Automation.PSTypeName]'Display.NativeMethods').Type) {
@@ -40,11 +53,24 @@ namespace Display {
             public short dmLogPixels;
             public int dmBitsPerPel, dmPelsWidth, dmPelsHeight, dmDisplayFlags, dmDisplayFrequency;
         }
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+        public struct DISPLAY_DEVICE {
+            public int cb;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string DeviceName;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string DeviceString;
+            public int StateFlags;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string DeviceID;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string DeviceKey;
+        }
+        [DllImport("user32.dll", CharSet = CharSet.Ansi)]
+        public static extern bool EnumDisplayDevices(string lpDevice, int iDevNum, ref DISPLAY_DEVICE lpDisplayDevice, int dwFlags);
         [DllImport("user32.dll", CharSet = CharSet.Ansi)]
         public static extern bool EnumDisplaySettings(string deviceName, int modeNum, ref DEVMODE devMode);
         [DllImport("user32.dll", CharSet = CharSet.Ansi)]
-        public static extern int ChangeDisplaySettings(ref DEVMODE devMode, int flags);
+        public static extern int ChangeDisplaySettingsEx(string deviceName, ref DEVMODE devMode, IntPtr hwnd, int flags, IntPtr lParam);
         public const int ENUM_CURRENT_SETTINGS = -1;
+        public const int ENUM_REGISTRY_SETTINGS = -2;
+        public const int DISPLAY_DEVICE_PRIMARY_DEVICE = 0x4;
         public const int DM_BITSPERPEL = 0x40000, DM_PELSWIDTH = 0x80000, DM_PELSHEIGHT = 0x100000, DM_DISPLAYFREQUENCY = 0x400000;
         public const int DISP_CHANGE_SUCCESSFUL = 0;
     }
@@ -52,26 +78,69 @@ namespace Display {
 "@
     }
 
-    $mode = New-Object Display.NativeMethods+DEVMODE
-    $mode.dmSize = [System.Runtime.InteropServices.Marshal]::SizeOf($mode)
-    $fields = [Display.NativeMethods]::DM_PELSWIDTH -bor [Display.NativeMethods]::DM_PELSHEIGHT
+    $deviceName = $null
+    $displayDevice = New-Object Display.NativeMethods+DISPLAY_DEVICE
+    $displayDevice.cb = [System.Runtime.InteropServices.Marshal]::SizeOf($displayDevice)
+    for ($index = 0; [Display.NativeMethods]::EnumDisplayDevices($null, $index, [ref]$displayDevice, 0); $index++) {
+        if (($displayDevice.StateFlags -band [Display.NativeMethods]::DISPLAY_DEVICE_PRIMARY_DEVICE) -ne 0) {
+            $deviceName = $displayDevice.DeviceName
+            break
+        }
+        $displayDevice = New-Object Display.NativeMethods+DISPLAY_DEVICE
+        $displayDevice.cb = [System.Runtime.InteropServices.Marshal]::SizeOf($displayDevice)
+    }
 
-    if (-not $RefreshRate.HasValue) {
-        if ([Display.NativeMethods]::EnumDisplaySettings($null, [Display.NativeMethods]::ENUM_CURRENT_SETTINGS, [ref]$mode)) {
-            $fields = $fields -bor [Display.NativeMethods]::DM_DISPLAYFREQUENCY
+    $requestedRefreshRate = $null
+    $useMaxRefreshRate = $false
+    if ($null -ne $RefreshRate) {
+        if ($RefreshRate -is [string] -and $RefreshRate.Equals("Max", [System.StringComparison]::OrdinalIgnoreCase)) {
+            $useMaxRefreshRate = $true
         } else {
-            Write-Warning "Nao foi possivel ler o modo atual do monitor. Alterando apenas a resolucao."
+            $requestedRefreshRate = [int][Math]::Round([double]$RefreshRate)
         }
     }
 
-    $mode.dmPelsWidth = $Width
-    $mode.dmPelsHeight = $Height
-    if ($RefreshRate.HasValue) {
-        $mode.dmDisplayFrequency = [int][Math]::Round($RefreshRate.Value)
-        $fields = $fields -bor [Display.NativeMethods]::DM_DISPLAYFREQUENCY
+    $bestMode = $null
+    $modeIndex = 0
+    do {
+        $candidate = New-Object Display.NativeMethods+DEVMODE
+        $candidate.dmSize = [System.Runtime.InteropServices.Marshal]::SizeOf($candidate)
+        $foundMode = [Display.NativeMethods]::EnumDisplaySettings($deviceName, $modeIndex, [ref]$candidate)
+        if ($foundMode -and $candidate.dmPelsWidth -eq $Width -and $candidate.dmPelsHeight -eq $Height) {
+            if ($useMaxRefreshRate) {
+                if ($null -eq $bestMode -or $candidate.dmDisplayFrequency -gt $bestMode.dmDisplayFrequency) {
+                    $bestMode = $candidate
+                }
+            } elseif ($null -ne $requestedRefreshRate) {
+                if ($candidate.dmDisplayFrequency -eq $requestedRefreshRate) {
+                    $bestMode = $candidate
+                    break
+                }
+                if ($null -eq $bestMode -or [Math]::Abs($candidate.dmDisplayFrequency - $requestedRefreshRate) -lt [Math]::Abs($bestMode.dmDisplayFrequency - $requestedRefreshRate)) {
+                    $bestMode = $candidate
+                }
+            }
+        }
+        $modeIndex++
+    } while ($foundMode)
+
+    if ($null -eq $bestMode) {
+        $bestMode = New-Object Display.NativeMethods+DEVMODE
+        $bestMode.dmSize = [System.Runtime.InteropServices.Marshal]::SizeOf($bestMode)
+        $bestMode.dmPelsWidth = $Width
+        $bestMode.dmPelsHeight = $Height
+        $bestMode.dmFields = [Display.NativeMethods]::DM_PELSWIDTH -bor [Display.NativeMethods]::DM_PELSHEIGHT
+        if ($null -ne $requestedRefreshRate) {
+            $bestMode.dmDisplayFrequency = $requestedRefreshRate
+            $bestMode.dmFields = $bestMode.dmFields -bor [Display.NativeMethods]::DM_DISPLAYFREQUENCY
+        }
+        Write-Warning "Nao foi possivel localizar um modo enumerado para ${Width}x${Height}. Usando alteracao direta."
+    } else {
+        $bestMode.dmFields = [Display.NativeMethods]::DM_BITSPERPEL -bor [Display.NativeMethods]::DM_PELSWIDTH -bor [Display.NativeMethods]::DM_PELSHEIGHT -bor [Display.NativeMethods]::DM_DISPLAYFREQUENCY
+        Write-Host "Modo escolhido: $($bestMode.dmPelsWidth)x$($bestMode.dmPelsHeight) @ $($bestMode.dmDisplayFrequency) Hz" -ForegroundColor Cyan
     }
-    $mode.dmFields = $fields
-    return [Display.NativeMethods]::ChangeDisplaySettings([ref]$mode, 0) -eq [Display.NativeMethods]::DISP_CHANGE_SUCCESSFUL
+
+    return [Display.NativeMethods]::ChangeDisplaySettingsEx($deviceName, [ref]$bestMode, [IntPtr]::Zero, 0, [IntPtr]::Zero) -eq [Display.NativeMethods]::DISP_CHANGE_SUCCESSFUL
 }
 
 function Start-RequiredProcess {
@@ -204,7 +273,9 @@ function Wait-ForIRacingWindow {
 function Wait-ForLauncherExit {
     Write-Host ""
     Write-Host "Ambiente iniciado. Deixe esta janela aberta enquanto estiver usando o simulador." -ForegroundColor Cyan
-    Write-Host "Feche esta janela ou pressione Enter para restaurar ${RestoreWidth}x${RestoreHeight} @ $RestoreRefreshRate Hz."
+    $restoreRefreshDescription = Format-RefreshRate -RefreshRate $RestoreRefreshRate
+    Write-Host "Pressione Enter para restaurar ${RestoreWidth}x${RestoreHeight} usando $restoreRefreshDescription."
+    Write-Host "Fechar a janela pelo X tambem tenta restaurar, mas Enter e mais confiavel."
     try {
         Read-Host | Out-Null
     } catch {
@@ -221,7 +292,8 @@ function Restore-DesktopDisplay {
     }
     $script:displayRestoreAttempted = $true
 
-    Write-Host "Restaurando resolução para ${RestoreWidth}x${RestoreHeight} @ $RestoreRefreshRate Hz..." -ForegroundColor Cyan
+    $restoreRefreshDescription = Format-RefreshRate -RefreshRate $RestoreRefreshRate
+    Write-Host "Restaurando resolução para ${RestoreWidth}x${RestoreHeight} usando $restoreRefreshDescription..." -ForegroundColor Cyan
     try {
         if (-not (Set-ScreenResolution -Width $RestoreWidth -Height $RestoreHeight -RefreshRate $RestoreRefreshRate)) {
             throw "O Windows recusou a restauracao de resolucao."
@@ -233,6 +305,34 @@ function Restore-DesktopDisplay {
     }
 }
 
+function Register-ConsoleCloseHandler {
+    if (-not ([System.Management.Automation.PSTypeName]'Console.NativeMethods').Type) {
+        Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+namespace Console {
+    public static class NativeMethods {
+        public delegate bool ConsoleCtrlHandler(int ctrlType);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern bool SetConsoleCtrlHandler(ConsoleCtrlHandler handler, bool add);
+    }
+}
+"@
+    }
+
+    $script:consoleCloseHandler = [Console.NativeMethods+ConsoleCtrlHandler]{
+        param([int]$ctrlType)
+        Restore-DesktopDisplay
+        Start-Sleep -Seconds 2
+        return $false
+    }
+
+    [Console.NativeMethods]::SetConsoleCtrlHandler($script:consoleCloseHandler, $true) | Out-Null
+}
+
+Register-ConsoleCloseHandler
+
 $null = Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action {
     Restore-DesktopDisplay
 }
@@ -242,8 +342,8 @@ try {
 
     Write-Host "Iniciando ambiente de simulação..." -ForegroundColor Cyan
 
-    $refreshDescription = if ($TargetRefreshRate) { "$TargetRefreshRate Hz" } else { "frequencia atual" }
-    Write-Host "1. Alterando resolução para ${TargetWidth}x${TargetHeight} mantendo $refreshDescription..."
+    $refreshDescription = Format-RefreshRate -RefreshRate $TargetRefreshRate
+    Write-Host "1. Alterando resolução para ${TargetWidth}x${TargetHeight} usando $refreshDescription..."
     try {
         if (-not (Set-ScreenResolution -Width $TargetWidth -Height $TargetHeight -RefreshRate $TargetRefreshRate)) { throw "O Windows recusou a alteração de resolução." }
         Write-Host "OK - Resolução alterada" -ForegroundColor Green
