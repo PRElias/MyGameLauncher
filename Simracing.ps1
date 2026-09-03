@@ -9,8 +9,13 @@ $iRacing = "C:\Program Files (x86)\iRacing\ui\iRacingUI.exe"
 $TargetWidth = 2560
 $TargetHeight = 1440
 $TargetRefreshRate = 174.96 # $null # Use $null para manter a frequencia atual, ou defina 174 para forcar 174 Hz.
+$RestoreDisplayOnLauncherExit = $true
+$RestoreWidth = 3440
+$RestoreHeight = 1440
+$RestoreRefreshRate = 174.96
 
 $failures = [System.Collections.Generic.List[string]]::new()
+$displayRestoreAttempted = $false
 
 function Set-ScreenResolution {
     param(
@@ -196,42 +201,86 @@ function Wait-ForIRacingWindow {
     return $false
 }
 
-Stop-BackgroundApplications
-
-Write-Host "Iniciando ambiente de simulação..." -ForegroundColor Cyan
-
-$refreshDescription = if ($TargetRefreshRate) { "$TargetRefreshRate Hz" } else { "frequencia atual" }
-Write-Host "1. Alterando resolução para ${TargetWidth}x${TargetHeight} mantendo $refreshDescription..."
-try {
-    if (-not (Set-ScreenResolution -Width $TargetWidth -Height $TargetHeight -RefreshRate $TargetRefreshRate)) { throw "O Windows recusou a alteração de resolução." }
-    Write-Host "OK - Resolução alterada" -ForegroundColor Green
-} catch {
-    $failures.Add("Alteração de resolução")
-    Write-Warning "Falha - Alteração de resolução: $($_.Exception.Message)"
+function Wait-ForLauncherExit {
+    Write-Host ""
+    Write-Host "Ambiente iniciado. Deixe esta janela aberta enquanto estiver usando o simulador." -ForegroundColor Cyan
+    Write-Host "Feche esta janela ou pressione Enter para restaurar ${RestoreWidth}x${RestoreHeight} @ $RestoreRefreshRate Hz."
+    try {
+        Read-Host | Out-Null
+    } catch {
+        Write-Warning "Entrada encerrada. Restaurando a tela."
+    }
 }
-Start-Sleep -Seconds 10
 
-Start-RequiredProcess -Name "SteamVR" -FilePath $SteamVR | Out-Null
-Start-Sleep -Seconds 10
+function Restore-DesktopDisplay {
+    if (-not $RestoreDisplayOnLauncherExit) {
+        return
+    }
+    if ($script:displayRestoreAttempted) {
+        return
+    }
+    $script:displayRestoreAttempted = $true
 
-$crewChief = $CrewChiefCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-Start-RequiredProcess -Name "CrewChief" -FilePath $crewChief | Out-Null
-Start-Sleep -Seconds 5
+    Write-Host "Restaurando resolução para ${RestoreWidth}x${RestoreHeight} @ $RestoreRefreshRate Hz..." -ForegroundColor Cyan
+    try {
+        if (-not (Set-ScreenResolution -Width $RestoreWidth -Height $RestoreHeight -RefreshRate $RestoreRefreshRate)) {
+            throw "O Windows recusou a restauracao de resolucao."
+        }
+        Write-Host "OK - Resolucao restaurada" -ForegroundColor Green
+    } catch {
+        $failures.Add("Restauração de resolução")
+        Write-Warning "Falha - Restauração de resolução: $($_.Exception.Message)"
+    }
+}
 
-Start-RequiredProcess -Name "Discord" -FilePath $Discord -ArgumentList @('--processStart', 'Discord.exe') | Out-Null
-Start-Sleep -Seconds 3
+$null = Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action {
+    Restore-DesktopDisplay
+}
 
-Start-RequiredProcess -Name "Trading Paints" -FilePath $TradingPaints | Out-Null
-Start-Sleep -Seconds 3
+try {
+    Stop-BackgroundApplications
 
-Start-RequiredProcess -Name "OBS Studio" -FilePath $OBS -WorkingDirectory (Split-Path -Parent $OBS) | Out-Null
+    Write-Host "Iniciando ambiente de simulação..." -ForegroundColor Cyan
 
-$iRacing = $iRacing | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-Start-RequiredProcess -Name "iRacing" -FilePath $iRacing | Out-Null
-Wait-ForIRacingWindow | Out-Null
+    $refreshDescription = if ($TargetRefreshRate) { "$TargetRefreshRate Hz" } else { "frequencia atual" }
+    Write-Host "1. Alterando resolução para ${TargetWidth}x${TargetHeight} mantendo $refreshDescription..."
+    try {
+        if (-not (Set-ScreenResolution -Width $TargetWidth -Height $TargetHeight -RefreshRate $TargetRefreshRate)) { throw "O Windows recusou a alteração de resolução." }
+        Write-Host "OK - Resolução alterada" -ForegroundColor Green
+    } catch {
+        $failures.Add("Alteração de resolução")
+        Write-Warning "Falha - Alteração de resolução: $($_.Exception.Message)"
+    }
+    Start-Sleep -Seconds 10
 
-if ($failures.Count -eq 0) {
-    Write-Host "Ambiente de simulação iniciado com sucesso." -ForegroundColor Green
-} else {
-    Write-Warning "Execução concluída com falhas nos passos: $($failures -join ', ')."
+    Start-RequiredProcess -Name "SteamVR" -FilePath $SteamVR | Out-Null
+    Start-Sleep -Seconds 10
+
+    $crewChief = $CrewChiefCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    Start-RequiredProcess -Name "CrewChief" -FilePath $crewChief | Out-Null
+    Start-Sleep -Seconds 5
+
+    Start-RequiredProcess -Name "Discord" -FilePath $Discord -ArgumentList @('--processStart', 'Discord.exe') | Out-Null
+    Start-Sleep -Seconds 3
+
+    Start-RequiredProcess -Name "Trading Paints" -FilePath $TradingPaints | Out-Null
+    Start-Sleep -Seconds 3
+
+    Start-RequiredProcess -Name "OBS Studio" -FilePath $OBS -WorkingDirectory (Split-Path -Parent $OBS) | Out-Null
+
+    $iRacing = $iRacing | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    Start-RequiredProcess -Name "iRacing" -FilePath $iRacing | Out-Null
+    Wait-ForIRacingWindow | Out-Null
+
+    if ($failures.Count -eq 0) {
+        Write-Host "Ambiente de simulação iniciado com sucesso." -ForegroundColor Green
+    } else {
+        Write-Warning "Execução concluída com falhas nos passos: $($failures -join ', ')."
+    }
+
+    if ($RestoreDisplayOnLauncherExit) {
+        Wait-ForLauncherExit
+    }
+} finally {
+    Restore-DesktopDisplay
 }

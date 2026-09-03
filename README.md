@@ -6,7 +6,8 @@ Inicializador Windows para preparar o ambiente de sim racing:
 - mantem/forca a frequencia configurada em `Simracing.ps1`;
 - fecha apps e servicos de fundo definidos no script;
 - inicia SteamVR, CrewChief, Discord, Trading Paints, OBS e iRacing;
-- aplica modo borderless na janela do iRacing quando ela aparecer.
+- aplica modo borderless na janela do iRacing quando ela aparecer;
+- mantem a janela do launcher aberta e restaura a resolucao/frequencia do desktop ao encerrar.
 
 ## Executar
 
@@ -76,11 +77,19 @@ As configuracoes ficam no inicio de `Simracing.ps1`:
 $TargetWidth = 2560
 $TargetHeight = 1440
 $TargetRefreshRate = 174.96
+$RestoreDisplayOnLauncherExit = $true
+$RestoreWidth = 3440
+$RestoreHeight = 1440
+$RestoreRefreshRate = 174.96
 ```
 
 Quando `$TargetRefreshRate` tem valor, o launcher informa essa frequencia ao Windows junto com a resolucao. O valor e arredondado para a API do Windows, entao `174.96` e enviado como `175`.
 
 Se `$TargetRefreshRate` estiver `$null`, o launcher tenta ler a frequencia atual do monitor e manter esse valor. Se essa leitura falhar em alguma maquina, ele mostra um aviso e altera apenas a resolucao, como o script original fazia.
+
+Quando `$RestoreDisplayOnLauncherExit` esta `$true`, o launcher fica aberto depois de preparar o ambiente. Deixe essa janela aberta enquanto estiver usando qualquer simulador. Ao pressionar Enter na janela do launcher, ele restaura `3440x1440 @ 174.96 Hz` e encerra. Se a janela for fechada diretamente, o launcher tambem tenta restaurar a tela durante o encerramento do PowerShell, mas o fechamento controlado com Enter e o caminho mais confiavel.
+
+Observacao: o launcher nao altera a opcao de taxa de atualizacao dinamica do Windows. Essa configuracao depende do Windows/driver/monitor e nao tem uma API simples e confiavel como a troca de resolucao/frequencia. A restauracao feita aqui e explicita: `3440x1440` com refresh rate enviado como `175 Hz`, que normalmente corresponde ao modo `174.96 Hz` exibido pelo Windows.
 
 ## Arquivos principais
 
