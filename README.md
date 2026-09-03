@@ -12,8 +12,7 @@ Executa o fluxo completo:
 
 - altera a tela para `2560x1440` usando a maior frequencia disponivel;
 - fecha apps e servicos de fundo definidos no codigo;
-- inicia SteamVR, CrewChief, Discord, Trading Paints, OBS e iRacing;
-- aguarda a janela do iRacing e aplica modo borderless.
+- inicia SteamVR, CrewChief, Discord, Trading Paints, OBS e iRacing.
 
 ### Streaming
 
@@ -29,6 +28,14 @@ Executa apenas a parte de resolucao:
 Restaura a tela para o modo de desktop:
 
 - `3440x1440` usando a maior frequencia disponivel.
+
+### Borderless
+
+Aplica modo borderless na janela atual do iRacing:
+
+- nao altera resolucao;
+- nao abre nem fecha programas;
+- use depois que a sessao do iRacing ja estiver carregada.
 
 ## Executavel publicado
 

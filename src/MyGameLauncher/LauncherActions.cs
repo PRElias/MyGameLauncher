@@ -36,7 +36,6 @@ internal sealed class LauncherActions(Action<string> log)
         StartRequiredProcess("OBS Studio", Obs, workingDirectory: Path.GetDirectoryName(Obs));
 
         StartRequiredProcess("iRacing", IRacing);
-        await WaitForIRacingWindowAsync(cancellationToken);
 
         log("Ambiente de simulacao iniciado.");
     }
@@ -52,6 +51,17 @@ internal sealed class LauncherActions(Action<string> log)
     {
         log("Restaurando modo desktop...");
         ApplyDisplay("desktop", DesktopDisplay);
+        return Task.CompletedTask;
+    }
+
+    public Task RunIRacingBorderlessAsync()
+    {
+        log("Aplicando borderless no iRacing...");
+        if (!BorderlessWindow.ApplyToIRacing(log))
+        {
+            log("Falha - abra a sessao do iRacing e tente novamente.");
+        }
+
         return Task.CompletedTask;
     }
 
@@ -176,25 +186,6 @@ internal sealed class LauncherActions(Action<string> log)
         {
             log($"Falha - {name}: {ex.Message}");
         }
-    }
-
-    private async Task WaitForIRacingWindowAsync(CancellationToken cancellationToken)
-    {
-        log("Aguardando a janela do iRacing...");
-        var deadline = DateTimeOffset.Now.AddMinutes(12);
-
-        while (DateTimeOffset.Now < deadline)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (BorderlessWindow.ApplyToIRacing(log))
-            {
-                return;
-            }
-
-            await DelaySeconds(2, cancellationToken);
-        }
-
-        log("A janela do iRacing nao foi detectada no tempo limite.");
     }
 
     private static Task DelaySeconds(int seconds, CancellationToken cancellationToken) =>

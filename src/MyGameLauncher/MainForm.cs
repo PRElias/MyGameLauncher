@@ -5,6 +5,7 @@ internal sealed class MainForm : Form
     private readonly Button simRacingButton = new();
     private readonly Button streamingButton = new();
     private readonly Button desktopButton = new();
+    private readonly Button borderlessButton = new();
     private readonly TextBox logBox = new();
     private readonly Label statusLabel = new();
     private readonly LauncherActions actions;
@@ -20,8 +21,8 @@ internal sealed class MainForm : Form
     {
         Text = "MyGameLauncher";
         StartPosition = FormStartPosition.CenterScreen;
-        MinimumSize = new Size(560, 430);
-        Size = new Size(680, 500);
+        MinimumSize = new Size(720, 430);
+        Size = new Size(820, 500);
         BackColor = Color.FromArgb(22, 26, 31);
         ForeColor = Color.White;
         Font = new Font("Segoe UI", 10F);
@@ -51,25 +52,29 @@ internal sealed class MainForm : Form
         var buttons = new TableLayoutPanel
         {
             Dock = DockStyle.Top,
-            ColumnCount = 3,
+            ColumnCount = 4,
             RowCount = 1,
             Height = 88
         };
-        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.333F));
-        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.333F));
-        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.333F));
+        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
 
         ConfigureButton(simRacingButton, "Simracing", Color.FromArgb(226, 48, 58));
         ConfigureButton(streamingButton, "Streaming", Color.FromArgb(0, 150, 190));
         ConfigureButton(desktopButton, "Desktop", Color.FromArgb(92, 106, 116));
+        ConfigureButton(borderlessButton, "Borderless", Color.FromArgb(78, 168, 118));
 
         simRacingButton.Click += async (_, _) => await RunActionAsync("Simracing", actions.RunSimRacingAsync);
         streamingButton.Click += async (_, _) => await RunActionAsync("Streaming", _ => actions.RunStreamingAsync());
         desktopButton.Click += async (_, _) => await RunActionAsync("Desktop", _ => actions.RunDesktopAsync());
+        borderlessButton.Click += async (_, _) => await RunActionAsync("Borderless", _ => actions.RunIRacingBorderlessAsync());
 
         buttons.Controls.Add(simRacingButton, 0, 0);
         buttons.Controls.Add(streamingButton, 1, 0);
         buttons.Controls.Add(desktopButton, 2, 0);
+        buttons.Controls.Add(borderlessButton, 3, 0);
 
         logBox.Dock = DockStyle.Fill;
         logBox.Multiline = true;
@@ -145,6 +150,7 @@ internal sealed class MainForm : Form
         simRacingButton.Enabled = !busy;
         streamingButton.Enabled = !busy;
         desktopButton.Enabled = !busy;
+        borderlessButton.Enabled = !busy;
         statusLabel.Text = status;
     }
 
