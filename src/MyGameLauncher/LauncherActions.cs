@@ -65,12 +65,121 @@ internal sealed class LauncherActions(Action<string> log)
         return Task.CompletedTask;
     }
 
+    public Task ClearShaderCachesAsync(CancellationToken cancellationToken) =>
+        Task.Run(() =>
+        {
+            log("Limpando caches de shaders e DirectX...");
+
+            var deletedFiles = 0;
+            var deletedDirectories = 0;
+            var skippedEntries = 0;
+
+            foreach (var folder in GetShaderCacheFolders())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (!Directory.Exists(folder.Path))
+                {
+                    log($"Ignorado - {folder.Name}: pasta nao encontrada.");
+                    continue;
+                }
+
+                log($"Limpando {folder.Name}: {folder.Path}");
+
+                string[] entries;
+                try
+                {
+                    entries = Directory.EnumerateFileSystemEntries(folder.Path).ToArray();
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    skippedEntries++;
+                    log($"Aviso - nao foi possivel acessar {folder.Name}: {ex.Message}");
+                    continue;
+                }
+
+                foreach (var entry in entries)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    if (TryDeleteCacheEntry(entry, ref deletedFiles, ref deletedDirectories))
+                    {
+                        continue;
+                    }
+
+                    skippedEntries++;
+                    log($"Aviso - nao foi possivel apagar: {entry}");
+                }
+            }
+
+            log($"Limpeza concluida. Arquivos apagados: {deletedFiles}; pastas apagadas: {deletedDirectories}; itens ignorados: {skippedEntries}.");
+            log("O driver e os jogos vao recriar esses caches no proximo uso.");
+        }, cancellationToken);
+
     private void ApplyDisplay(string name, DisplayRequest request)
     {
         var ok = DisplayManager.Apply(request, log);
         log(ok
             ? $"OK - Resolucao aplicada para {name}."
             : $"Falha - Windows recusou a resolucao para {name}.");
+    }
+
+    private static IEnumerable<(string Name, string Path)> GetShaderCacheFolders()
+    {
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var commonAppData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var localLow = Path.Combine(userProfile, "AppData", "LocalLow");
+
+        return
+        [
+            ("NVIDIA DXCache", Path.Combine(localAppData, "NVIDIA", "DXCache")),
+            ("NVIDIA GLCache", Path.Combine(localAppData, "NVIDIA", "GLCache")),
+            ("NVIDIA NV_Cache", Path.Combine(localAppData, "NVIDIA Corporation", "NV_Cache")),
+            ("NVIDIA PerDriverVersion DXCache", Path.Combine(localLow, "NVIDIA", "PerDriverVersion", "DXCache")),
+            ("NVIDIA PerDriverVersion GLCache", Path.Combine(localLow, "NVIDIA", "PerDriverVersion", "GLCache")),
+            ("NVIDIA LocalLow DXCache", Path.Combine(localLow, "NVIDIA", "DXCache")),
+            ("NVIDIA LocalLow GLCache", Path.Combine(localLow, "NVIDIA", "GLCache")),
+            ("NVIDIA ProgramData NV_Cache", Path.Combine(commonAppData, "NVIDIA Corporation", "NV_Cache")),
+            ("DirectX D3DSCache", Path.Combine(localAppData, "D3DSCache")),
+            ("DirectX Microsoft D3DSCache", Path.Combine(localAppData, "Microsoft", "D3DSCache"))
+        ];
+    }
+
+    private static bool TryDeleteCacheEntry(string entry, ref int deletedFiles, ref int deletedDirectories)
+    {
+        try
+        {
+            if (File.Exists(entry))
+            {
+                File.SetAttributes(entry, FileAttributes.Normal);
+                File.Delete(entry);
+                deletedFiles++;
+                return true;
+            }
+
+            if (Directory.Exists(entry))
+            {
+                ClearReadOnlyAttributes(entry);
+                Directory.Delete(entry, recursive: true);
+                deletedDirectories++;
+                return true;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+
+        return false;
+    }
+
+    private static void ClearReadOnlyAttributes(string directory)
+    {
+        foreach (var file in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
+        {
+            File.SetAttributes(file, FileAttributes.Normal);
+        }
     }
 
     private void StopBackgroundApplications()

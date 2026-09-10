@@ -6,6 +6,7 @@ internal sealed class MainForm : Form
     private readonly Button streamingButton = new();
     private readonly Button desktopButton = new();
     private readonly Button borderlessButton = new();
+    private readonly Button shaderCacheButton = new();
     private readonly TextBox logBox = new();
     private readonly Label statusLabel = new();
     private readonly LauncherActions actions;
@@ -52,29 +53,33 @@ internal sealed class MainForm : Form
         var buttons = new TableLayoutPanel
         {
             Dock = DockStyle.Top,
-            ColumnCount = 4,
+            ColumnCount = 5,
             RowCount = 1,
             Height = 88
         };
-        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
-        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
-        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
-        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20F));
+        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20F));
+        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20F));
+        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20F));
+        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20F));
 
         ConfigureButton(simRacingButton, "Simracing", Color.FromArgb(226, 48, 58));
         ConfigureButton(streamingButton, "Streaming", Color.FromArgb(0, 150, 190));
         ConfigureButton(desktopButton, "Desktop", Color.FromArgb(92, 106, 116));
         ConfigureButton(borderlessButton, "Borderless", Color.FromArgb(78, 168, 118));
+        ConfigureButton(shaderCacheButton, "Shaders", Color.FromArgb(146, 96, 210));
 
         simRacingButton.Click += async (_, _) => await RunActionAsync("Simracing", actions.RunSimRacingAsync);
         streamingButton.Click += async (_, _) => await RunActionAsync("Streaming", _ => actions.RunStreamingAsync());
         desktopButton.Click += async (_, _) => await RunActionAsync("Desktop", _ => actions.RunDesktopAsync());
         borderlessButton.Click += async (_, _) => await RunActionAsync("Borderless", _ => actions.RunIRacingBorderlessAsync());
+        shaderCacheButton.Click += async (_, _) => await RunActionAsync("Shaders", actions.ClearShaderCachesAsync);
 
         buttons.Controls.Add(simRacingButton, 0, 0);
         buttons.Controls.Add(streamingButton, 1, 0);
         buttons.Controls.Add(desktopButton, 2, 0);
         buttons.Controls.Add(borderlessButton, 3, 0);
+        buttons.Controls.Add(shaderCacheButton, 4, 0);
 
         logBox.Dock = DockStyle.Fill;
         logBox.Multiline = true;
@@ -151,6 +156,7 @@ internal sealed class MainForm : Form
         streamingButton.Enabled = !busy;
         desktopButton.Enabled = !busy;
         borderlessButton.Enabled = !busy;
+        shaderCacheButton.Enabled = !busy;
         statusLabel.Text = status;
     }
 

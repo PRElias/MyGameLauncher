@@ -37,6 +37,15 @@ Aplica modo borderless na janela atual do iRacing:
 - nao abre nem fecha programas;
 - use depois que a sessao do iRacing ja estiver carregada.
 
+### Shaders
+
+Limpa caches de shaders e DirectX:
+
+- apaga o conteudo dos caches NVIDIA DXCache, GLCache e NV_Cache;
+- apaga caches DirectX D3DSCache do usuario;
+- nao altera arquivos em `Documents\iRacing`;
+- nao apaga configuracoes do iRacing nem perfis do driver.
+
 ## Executavel publicado
 
 O executavel pronto para copiar fica em:
